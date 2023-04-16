@@ -48,6 +48,8 @@ pub enum ReceiveMessage {
     Stream(u32, StreamType, Vec<u8>),
     /// (Only stable connected) Delivery feedback. include StableConnect, StableResult, Data. `id(u32) != 0`.
     Delivery(DeliveryType, u64, bool, Vec<u8>),
+    // network connect result, when a peer called connect to us and session was created.
+    Connect(PeerId),
     /// when network lost all DHT network and direct stables. will tell outside.
     NetworkLost,
     /// when same PeerId peer is connected.

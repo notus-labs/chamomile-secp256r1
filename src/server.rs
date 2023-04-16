@@ -300,6 +300,9 @@ pub async fn start_with_key(
                         session_receiver,
                     );
                     debug!("Incoming remote sessioned: {}.", remote_id.short_show());
+                    let _ = inner_global
+                        .out_send(ReceiveMessage::Connect(remote_id))
+                        .await;
                 }
                 Some(FutureResult::Check) => {
                     if inner_global.peer_list.read().await.is_empty() {
