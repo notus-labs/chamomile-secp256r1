@@ -49,6 +49,11 @@ impl Key {
         Self { pub_key, sec_key }
     }
 
+    pub fn from_secp256r1_key(sec_key: Secp256r1PrivateKey) -> Self {
+        let sec_key = SecretKey(sec_key);
+        Self::from_sec_key(sec_key)
+    }
+
     pub fn generate<R: CryptoRng + RngCore>(rng: &mut R) -> Key {
         let random_bytes: [u8; 32] = rng.gen::<[u8; 32]>();
         let sec_key = SecretKey(Secp256r1KeyPair::from_bytes(&random_bytes).unwrap().secret);
