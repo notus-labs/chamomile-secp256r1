@@ -1,9 +1,13 @@
-use rand_core::{CryptoRng, RngCore};
-use secp256k1::{
-    constants::ONE,
-    ecdsa::{RecoverableSignature, RecoveryId},
-    Message as SecpMessage, PublicKey as SecpPublicKey, Secp256k1, SecretKey as SecpSecretKey,
+use fastcrypto::{
+    hash::Sha256,
+    secp256r1::{
+        recoverable::Secp256r1RecoverableSignature, Secp256r1KeyPair, Secp256r1PrivateKey,
+        Secp256r1PublicKey,
+    },
+    traits::{RecoverableSignature, RecoverableSigner, ToFromBytes},
 };
+use rand_core::{CryptoRng, RngCore};
+use secp256k1::rand::Rng;
 use sha3::{Digest, Keccak256};
 
 pub use secp256k1;
@@ -12,16 +16,16 @@ use crate::types::{new_io_error, PeerId, PEER_ID_LENGTH};
 
 pub const SECRET_KEY_LENGTH: usize = 32;
 pub const PUBLIC_KEY_LENGTH: usize = 33;
-pub const SIGNATURE_LENGTH: usize = 68;
+pub const SIGNATURE_LENGTH: usize = 65;
 
 /// Public Key
 #[derive(Clone)]
-pub struct PublicKey(SecpPublicKey);
+pub struct PublicKey(Secp256r1PublicKey);
 
 /// Secret Key
-pub struct SecretKey(SecpSecretKey);
+pub struct SecretKey(Secp256r1PrivateKey);
 
-pub struct Signature(RecoverableSignature);
+pub struct Signature(Secp256r1RecoverableSignature);
 
 /// The keypair, include pk, sk, address
 pub struct Key {
@@ -31,19 +35,23 @@ pub struct Key {
 
 impl Key {
     pub fn from_sec_key(sec_key: SecretKey) -> Self {
-        let secp = Secp256k1::new();
-        let pub_key = PublicKey(sec_key.0.public_key(&secp));
-
+        let pub_key: PublicKey = PublicKey(
+            Secp256r1PublicKey::from_bytes(
+                sec_key
+                    .0
+                    .privkey
+                    .verifying_key()
+                    .to_encoded_point(true)
+                    .as_bytes(),
+            )
+            .unwrap(),
+        );
         Self { pub_key, sec_key }
     }
 
-    pub fn default() -> Self {
-        let sec_key = SecretKey(SecpSecretKey::from_slice(&ONE).unwrap());
-        Self::from_sec_key(sec_key)
-    }
-
     pub fn generate<R: CryptoRng + RngCore>(rng: &mut R) -> Key {
-        let sec_key = SecretKey(SecpSecretKey::new(rng));
+        let random_bytes: [u8; 32] = rng.gen::<[u8; 32]>();
+        let sec_key = SecretKey(Secp256r1KeyPair::from_bytes(&random_bytes).unwrap().secret);
         Self::from_sec_key(sec_key)
     }
 
@@ -56,18 +64,16 @@ impl Key {
     }
 
     pub fn sign(&self, msg: &[u8]) -> Signature {
-        let mut hasher = Keccak256::new();
-        hasher.update(msg);
-        let result = hasher.finalize();
-        let msg = SecpMessage::from_slice(&result).unwrap();
-        let secp = Secp256k1::new();
-        let sign = secp.sign_ecdsa_recoverable(&msg, &self.sec_key.0);
-        Signature(sign)
+        let keypair: Secp256r1KeyPair = Secp256r1PrivateKey::from_bytes(self.sec_key.0.as_bytes())
+            .unwrap()
+            .into();
+        let signature = keypair.sign_recoverable_with_hash::<Sha256>(msg);
+        Signature(signature)
     }
 
     pub fn to_db_bytes(&self) -> Vec<u8> {
         let mut bytes = vec![];
-        bytes.extend(&self.sec_key.0.secret_bytes());
+        bytes.extend(&self.sec_key.0.privkey.to_bytes());
         bytes
     }
 
@@ -76,7 +82,7 @@ impl Key {
             return Err(new_io_error("keypair from db bytes failure."));
         }
         let sec_key = SecretKey(
-            SecpSecretKey::from_slice(&bytes[..SECRET_KEY_LENGTH])
+            Secp256r1PrivateKey::from_bytes(&bytes[..SECRET_KEY_LENGTH])
                 .map_err(|_| new_io_error("secret key from db bytes failure."))?,
         );
         Ok(Self::from_sec_key(sec_key))
@@ -84,16 +90,16 @@ impl Key {
 }
 
 impl PublicKey {
-    pub fn new(pk: SecpPublicKey) -> Self {
+    pub fn new(pk: Secp256r1PublicKey) -> Self {
         Self(pk)
     }
 
-    pub fn raw(&self) -> &SecpPublicKey {
+    pub fn raw(&self) -> &Secp256r1PublicKey {
         &self.0
     }
 
     pub fn peer_id(&self) -> PeerId {
-        let public_key = self.0.serialize_uncompressed();
+        let public_key = self.0.as_bytes();
         let mut hasher = Keccak256::new();
         hasher.update(&public_key[1..]);
         let result = hasher.finalize();
@@ -104,46 +110,34 @@ impl PublicKey {
 }
 
 impl SecretKey {
-    pub fn new(sk: SecpSecretKey) -> Self {
+    pub fn new(sk: Secp256r1PrivateKey) -> Self {
         Self(sk)
     }
 
-    pub fn raw(&self) -> &SecpSecretKey {
+    pub fn raw(&self) -> &Secp256r1PrivateKey {
         &self.0
     }
 }
 
 impl Signature {
     pub fn to_bytes(&self) -> Vec<u8> {
-        let (recv, fixed) = self.0.serialize_compact();
-        let mut bytes = recv.to_i32().to_le_bytes().to_vec();
-        bytes.extend(&fixed);
-        bytes
+        self.0.as_bytes().to_vec()
     }
 
     pub fn from_bytes(bytes: &[u8]) -> std::io::Result<Signature> {
         if bytes.len() != SIGNATURE_LENGTH {
             return Err(new_io_error("Invalid signature length"));
         }
-        let mut fixed = [0u8; 4];
-        fixed.copy_from_slice(&bytes[..4]);
-        let id = i32::from_le_bytes(fixed);
-        let recv = RecoveryId::from_i32(id).map_err(|_| new_io_error("Invalid signature value"))?;
-        RecoverableSignature::from_compact(&bytes[4..], recv)
-            .map(Signature)
-            .map_err(|_| new_io_error("Invalid signature value"))
+
+        Ok(Signature(
+            Secp256r1RecoverableSignature::from_bytes(bytes).unwrap(),
+        ))
     }
 
     pub fn peer_id(&self, msg: &[u8]) -> std::io::Result<PeerId> {
-        let mut hasher = Keccak256::new();
-        hasher.update(msg);
-        let result = hasher.finalize();
-        let msg = SecpMessage::from_slice(&result).unwrap();
+        let pub_key = self.0.recover_with_hash::<Sha256>(msg);
 
-        let secp = Secp256k1::new();
-        let pk = secp
-            .recover_ecdsa(&msg, &self.0)
-            .map_err(|_| new_io_error("Invalid signature"))?;
+        let pk = pub_key.map_err(|_| new_io_error("Invalid signature"))?;
         Ok(PublicKey(pk).peer_id())
     }
 }
@@ -157,7 +151,7 @@ impl TryFrom<&str> for PublicKey {
             return Err(new_io_error("Invalid public key length"));
         }
         Ok(PublicKey(
-            SecpPublicKey::from_slice(&bytes)
+            Secp256r1PublicKey::from_bytes(&bytes)
                 .map_err(|_| new_io_error("Invalid public key value"))?,
         ))
     }
@@ -165,7 +159,7 @@ impl TryFrom<&str> for PublicKey {
 
 impl ToString for PublicKey {
     fn to_string(&self) -> String {
-        hex::encode(self.0.serialize())
+        hex::encode(self.0.as_bytes())
     }
 }
 
@@ -178,7 +172,7 @@ impl TryFrom<&str> for SecretKey {
             return Err(new_io_error("Invalid secret key length"));
         }
         Ok(SecretKey(
-            SecpSecretKey::from_slice(&bytes)
+            Secp256r1PrivateKey::from_bytes(&bytes)
                 .map_err(|_| new_io_error("Invalid secret key value"))?,
         ))
     }
@@ -186,6 +180,6 @@ impl TryFrom<&str> for SecretKey {
 
 impl ToString for SecretKey {
     fn to_string(&self) -> String {
-        hex::encode(self.0.secret_bytes())
+        hex::encode(self.0.privkey.to_bytes())
     }
 }

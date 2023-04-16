@@ -97,7 +97,7 @@ pub enum SendMessage {
     /// if `delivery_feedback_id = 0` will not feedback.
     Data(u64, PeerId, Vec<u8>),
     /// when need broadcast a data to all network,
-    /// chamomile support some common algorithm, use it, donnot worry.
+    /// chamomile support some common algorithm, use it, do not worry.
     /// params is `broadcast_type` and `data_bytes`
     Broadcast(Broadcast, Vec<u8>),
     /// (Only Stable connected) Apply for build a stream between nodes.

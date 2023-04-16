@@ -32,6 +32,7 @@ tracing = "0.1"
 tokio = { version = "1", features = ["full"] }
 webpki = "0.22"
 zeroize = { version = "1", features = ["zeroize_derive"] }
+fastcrypto = { git = "https://github.com/MystenLabs/fastcrypto.git" }
 
 [dev-dependencies]
 console-subscriber = "0.1"
