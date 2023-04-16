@@ -1,7 +1,7 @@
 [![crate](https://img.shields.io/badge/crates.io-v0.10.2-green.svg)](https://crates.io/crates/chamomile) [![doc](https://img.shields.io/badge/docs.rs-v0.10.2-blue.svg)](https://docs.rs/chamomile)
 
-# Chamomile
-*Build a robust stable connection on p2p network*
+# Chamomile-Secp256r1
+*Build a robust stable connection on p2p network (Secp256r1 Version)*
 
 ## features
 - Support build a robust stable connection between two peers on the p2p network.
