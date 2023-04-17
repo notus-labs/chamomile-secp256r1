@@ -731,6 +731,9 @@ impl Session {
         debug!("Session running: {}.", self.remote_peer.id.short_show());
         let _ = self.forever(session_receiver).await;
         debug!("Session broke: {}.", self.remote_peer.id.short_show());
+        let _ = self
+            .out_send(ReceiveMessage::Disconnect(self.remote_peer.id))
+            .await;
         self.close(true).await
     }
 

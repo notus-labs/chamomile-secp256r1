@@ -115,6 +115,12 @@ async fn main() {
             ReceiveMessage::NetworkLost => {
                 println!("No peers conneced.")
             }
+            ReceiveMessage::Connect(peer_id) => {
+                println!("Connect: {}", peer_id.short_show());
+            }
+            ReceiveMessage::Disconnect(peer_id) => {
+                println!("Disconnect: {}", peer_id.short_show());
+            }
             _ => {
                 panic!("nerver here!");
             }

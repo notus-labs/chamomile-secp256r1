@@ -50,6 +50,8 @@ pub enum ReceiveMessage {
     Delivery(DeliveryType, u64, bool, Vec<u8>),
     // network connect result, when a peer called connect to us and session was created.
     Connect(PeerId),
+    // Disconnected
+    Disconnect(PeerId),
     /// when network lost all DHT network and direct stables. will tell outside.
     NetworkLost,
     /// when same PeerId peer is connected.
